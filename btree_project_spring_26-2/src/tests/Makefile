@@ -1,22 +1,26 @@
 JAR=btreelib.jar
 
-#this is the name of the given project folder
-ASSIGNMENT=btree_project_spring_26
+# Path to your project folder
+ASSIGN=/root/Documents/main/btree_project_spring_26-2
 
-#change the ASSIGN path to the path where you have downloaded
-ASSIGN=/home/s/sa/santraa/CSE5331
+# Correct LIBPATH to point to the correct location
+LIBPATH = $(ASSIGN)/lib/$(JAR)
 
-# Do not change the following paths if you are using omega.uta.edu (Spring 2026)
-LIBPATH = $(ASSIGN)/$(ASSIGNMENT)/lib/$(JAR)
-CLASSPATH = $(LIBPATH):$(ASSIGN)/$(ASSIGNMENT)/src
+# The CLASSPATH should include both the JAR file and the src directory
+CLASSPATH = $(LIBPATH):$(ASSIGN)/src
+
+# Java compile and run commands with classpath set
 JAVAC = javac -classpath $(CLASSPATH)
-JAVA  = java  -classpath $(CLASSPATH)
+JAVA  = java -classpath $(CLASSPATH)
 
-BTTest:BTTest.java
-	$(JAVAC) BTTest.java TestDriver.java
+# Target to compile the test files (BTTest.java, TestDriver.java, etc.)
+tests: $(ASSIGN)/src/tests/BTTest.java $(ASSIGN)/src/tests/TestDriver.java
+	$(JAVAC) $(ASSIGN)/src/tests/*.java
 
-bttest: BTTest
-	$(JAVA) tests.BTTest
+# Target to run the tests using the BTTest class
+bttest: tests
+	$(JAVA) tests.BTTest   # Runs the tests using the BTTest class
 
+# Clean up the compiled class files in the tests directory
 clean:
-	\rm -f *.class *~ \#* core
+	rm -f $(ASSIGN)/src/tests/*.class *~ \#* core
