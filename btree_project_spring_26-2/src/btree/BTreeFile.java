@@ -688,15 +688,115 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	 * find the one containing <key,rid>, which we then delete via
 	 * BTLeafPage::delUserRid.
 	 */
-
-	private boolean NaiveDelete(KeyClass key, RID rid)
+private boolean NaiveDelete(KeyClass key, RID rid)
 			throws LeafDeleteException, KeyNotMatchException, PinPageException,
 			ConstructPageException, IOException, UnpinPageException,
 			PinPageException, IndexSearchException, IteratorException {
             
             // [ASantra: 1/22/2026] Remove the return statement and start your code.
 			
-            return false;
+	    RID startRid = new RID();
+	    BTLeafPage leaf = findRunStart(key, startRid);
+
+	    // Empty tree / nothing to scan
+	    if (leaf == null) {
+	        System.out.println("NaiveDelete: key not found at leaf level.");
+	        return false;
+	    }
+
+	    PageId curPid = startRid.pageNo;   // page currently pinned by findRunStart
+	    boolean pinned = true;
+	    boolean dirty = false;
+
+	    boolean sawKey = false;
+	    boolean deletedAny = false;
+
+	    try {
+	        while (true) {
+
+	            // Position on first entry with entry.key >= key on this leaf
+	            RID entryRid = new RID();
+	            KeyDataEntry entry = leaf.getFirst(entryRid);
+	            while (entry != null && BT.keyCompare(entry.key, key) < 0) {
+	                entry = leaf.getNext(entryRid);
+	            }
+
+	            // No entries >= key on this page -> go right
+	            if (entry == null) {
+	                PageId nextPid = leaf.getNextPage();
+	                unpinPage(curPid, dirty);
+	                pinned = false;
+	                dirty = false;
+
+	                if (nextPid.pid == INVALID_PAGE) break;
+
+	                curPid = nextPid;
+	                leaf = new BTLeafPage(pinPage(curPid), headerPage.get_keyType());
+	                pinned = true;
+	                continue;
+	            }
+
+	            int cmp = BT.keyCompare(entry.key, key);
+
+	            // First entry >= key is already > key => key does not exist in leaves
+	            if (cmp > 0) break;
+
+	            // cmp == 0: we are at the start (or inside) the duplicate-run for this key
+	            sawKey = true;
+
+	            // Collect matching <key,rid> entries on THIS leaf, then delete them
+	            java.util.ArrayList<KeyDataEntry> toDelete = new java.util.ArrayList<>();
+
+	            while (entry != null && BT.keyCompare(entry.key, key) == 0) {
+	                RID dataRid = ((LeafData) entry.data).getData();
+
+	                if (dataRid != null
+	                        && rid != null
+	                        && dataRid.pageNo != null
+	                        && rid.pageNo != null
+	                        && dataRid.pageNo.pid == rid.pageNo.pid
+	                        && dataRid.slotNo == rid.slotNo) {
+	                    toDelete.add(entry); // delete the exact data entry we found
+	                }
+
+	                entry = leaf.getNext(entryRid);
+	            }
+
+	            // Delete all duplicates of the PAIR <key,rid> found on this page
+	            for (KeyDataEntry e : toDelete) {
+	                leaf.delEntry(e);       // <-- THIS is the fix (no delUserRid in your BTLeafPage)
+	                deletedAny = true;
+	                dirty = true;
+	            }
+
+	            // If we stopped because we saw a key > target, we're done globally
+	            if (entry != null && BT.keyCompare(entry.key, key) > 0) break;
+
+	            // Otherwise we hit end-of-page (entry == null): duplicates might continue on next leaf
+	            PageId nextPid = leaf.getNextPage();
+	            unpinPage(curPid, dirty);
+	            pinned = false;
+	            dirty = false;
+
+	            if (nextPid.pid == INVALID_PAGE) break;
+
+	            curPid = nextPid;
+	            leaf = new BTLeafPage(pinPage(curPid), headerPage.get_keyType());
+	            pinned = true;
+	        }
+	    } finally {
+	        if (pinned) {
+	            unpinPage(curPid, dirty);
+	        }
+	    }
+
+	    if (!sawKey) {
+	        System.out.println("NaiveDelete: key not found at leaf level.");
+	    } else if (!deletedAny) {
+	        System.out.println("NaiveDelete: <key,rid> pair not found for deletion.");
+	    }
+
+	    return deletedAny;
 	}
 	/**
 	 * create a scan with given keys Cases: (1) lo_key = null, hi_key = null
