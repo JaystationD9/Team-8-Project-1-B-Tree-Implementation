@@ -358,127 +358,79 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	 * @exception InsertException
 	 *                error when insert in index page
 	 */
-	public void insert(KeyClass key, RID rid) throws KeyTooLongException,
-			KeyNotMatchException, LeafInsertRecException,
-			IndexInsertRecException, ConstructPageException,
-			UnpinPageException, PinPageException, NodeNotMatchException,
-			ConvertException, DeleteRecException, IndexSearchException,
-			IteratorException, LeafDeleteException, InsertException,
-			IOException
-
+	public void insert(KeyClass key, RID rid)
+	        throws KeyTooLongException, KeyNotMatchException,
+	               LeafInsertRecException, IndexInsertRecException,
+	               ConstructPageException, UnpinPageException,
+	               PinPageException, NodeNotMatchException,
+	               ConvertException, DeleteRecException,
+	               IndexSearchException, IteratorException,
+	               LeafDeleteException, InsertException, IOException
 	{
-		// [ASantra: 1/22/2026] Write your code here
+	    int keyType = headerPage.get_keyType();
+
+	    // for EMPTY TREE
+		// if
+	    PageId rootId = headerPage.get_rootId();
+	    if (rootId.pid == INVALID_PAGE) {
+
+	        BTLeafPage firstLeaf = new BTLeafPage(keyType);
+	        PageId firstLeafId = firstLeaf.getCurPage();
+
+	        firstLeaf.insertRecord(key, rid);
+	        headerPage.set_rootId(firstLeafId);
+
+	        unpinPage(firstLeafId, true);
+	        return;
+	    }
+
+	    // for NON-EMPTY TREE 
+	    // Delegate the real work to _insert
+	    KeyDataEntry upEntry = _insert(key, rid, rootId);
+
+	    // If no split propagated to the root, we're done
+	    if (upEntry == null) {
+	        return;
+	    }
+
+	    // ROOT SPLIT CASE 
+	    // A split reached the root, so make a new root index page
+	    BTIndexPage newRoot = new BTIndexPage(keyType);
+	    PageId newRootId = newRoot.getCurPage();
+
+	    // Old root becomes the left child
+	    newRoot.setLeftLink(rootId);
+
+	    // _insert needs to return IndexData(pageId) when bubbling up. i dont think a pageID should be returned
+	    if (!(upEntry.data instanceof IndexData)) {
+	        throw new InsertException(null,
+	            "Expected IndexData from _insert, got: " + upEntry.data.getClass().getName());
+	    }
+
+	    // Right child of the new root is the page id inside IndexData
+	    PageId rightChild = ((IndexData) upEntry.data).getData();
+
+	    // Insert routing entry into the new root
+	    newRoot.insertKey(upEntry.key, rightChild);
+
+	    // Update header to point to the new root
+	    headerPage.set_rootId(newRootId);
+
+	    // Unpin and mark new root dirty
+	    unpinPage(newRootId, true);
 	}
+
 
 	private KeyDataEntry _insert(KeyClass key, RID rid, PageId currentPageId)
 			throws PinPageException, IOException, ConstructPageException,
 			LeafDeleteException, ConstructPageException, DeleteRecException,
 			IndexSearchException, UnpinPageException, LeafInsertRecException,
 			ConvertException, IteratorException, IndexInsertRecException,
-			KeyNotMatchException, NodeNotMatchException, InsertException 
+			KeyNotMatchException, NodeNotMatchException, InsertException
+
 	{
-		//pin the current page and craete a BTSortedPage.
-		Page page = pinPage(currentPageId);
-		BTSortedPage currentPage = new BTSortedPage(page, headerPage.get_keyType());
-		KeyDataEntry upEntry = null;
-
-		//check if currentPage is of type Index
-		if (currentPage.getType() == NodeType.INDEX) {
-			BTIndexPage currentIndexPage = new BTIndexPage(page, headerPage.get_keyType());
-			PageId nextPageId = currentIndexPage.getPageNoByKey(key);
-
-			//unpin the current index page and recurse sing upEntry and pin again
-			unpinPage(currentPageId);
-			upEntry = _insert(key, rid, nextPageId);
-			if (upEntry == null) {
-				return null; // No split occurred, return
-			}
-
-			//check if the index page has enough space for the new entry
-			if (currentIndexPage.available_space() >= BT.getKeyDataLength(upEntry.key, NodeType.INDEX)) 
-			{
-				currentIndexPage.insert(upEntry.key, upEntry.data);
-				unpinPage(currentPageId, true); // Mark the page as dirty
-				return null; // Return, no need to split
-			}
-
-			//handle splitting the index page if no space is available
-			PageId newIndexPageId = new PageId();
-			BTIndexPage newIndexPage = new BTIndexPage(newIndexPageId, headerPage.get_keyType());
-			RID delRID = new RID();
-			KeyDataEntry tmpEntry;
-
-			//move all of the entries from currentIndexPage to newIndexPage
-			while ((tmpEntry = currentIndexPage.getFirst(delRID)) != null)
-			{
-				newIndexPage.insert(tmpEntry.key, tmpEntry.data);
-				currentIndexPage.deleteSortedRecord(delRID);
-			}
-
-			//insert the new entry in the appropriate page
-			boolean insertInNew = BT.keyCompare(upEntry.key, tmpEntry.key) > 0;
-			if (insertInNew) 
-			{
-				newIndexPage.insert(upEntry.key, upEntry.data);
-			} else 
-			{
-				currentIndexPage.insert(upEntry.key, upEntry.data);
-			}
-
-			//spilt records to make the split balanced
-			unpinPage(currentPageId, true); // Dirty the current page
-			KeyDataEntry middleEntry = newIndexPage.getFirst(delRID);
-			newIndexPage.setPrevPage(currentPageId);
-
-			//unpin the new index page and set the higher index page to point to the new page
-			unpinPage(newIndexPageId, true);
-			((IndexData) middleEntry.data).setData(newIndexPageId);
-
-			return middleEntry;
-		} 
-
-		//if the currentPage is of type Leaf, handle the insertion in leaf nodes
-		else if (currentPage.getType() == NodeType.LEAF) {
-			BTLeafPage currentLeafPage = new BTLeafPage(page, headerPage.get_keyType());
-			KeyDataEntry tmpEntry;
-
-			//check if the leaf page has space for the new entry
-			if (currentLeafPage.available_space() >= BT.getKeyDataLength(key, NodeType.LEAF)) {
-				currentLeafPage.insert(key, rid);  // Use insert() instead of insertRecord
-				unpinPage(currentPageId, true); // Mark the leaf page as dirty
-				return null; // No split, return
-			}
-
-			//handle splitting the leaf page if no space is available
-			PageId newLeafPageId = new PageId();
-			BTLeafPage newLeafPage = new BTLeafPage(newLeafPageId, headerPage.get_keyType());
-			currentLeafPage.setNextPage(newLeafPageId);
-			newLeafPage.setPrevPage(currentPageId);
-
-			//transfer records from the current leaf to the new leaf page
-			while ((tmpEntry = currentLeafPage.getFirst(new RID())) != null) {
-				newLeafPage.insert(tmpEntry.key, tmpEntry.data);
-				currentLeafPage.deleteSortedRecord(new RID());
-			}
-
-			//insert the new entry in the appropriate leaf page (current or new)
-			if (BT.keyCompare(key, tmpEntry.key) > 0) {
-				newLeafPage.insert(key, rid);  // Use insert() instead of insertRecord
-			} else {
-				currentLeafPage.insert(key, rid);  // Use insert() instead of insertRecord
-			}
-
-			//unpin both pages as dirty
-			unpinPage(currentPageId, true);
-			unpinPage(newLeafPageId, true);
-
-			//return the upEntry as the first record in the new leaf page
-			upEntry = new KeyDataEntry(newLeafPage.getFirst(new RID()).key, newLeafPageId);
-			return upEntry;
-		}
-
-		//if the page is not of type Index or Leaf, throw an exception
-		throw new InsertException("null");
+		// [ASantra: 1/22/2026] Remove the return statement and start your code.
+		return null;
 	}
 
 	
