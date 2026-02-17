@@ -384,7 +384,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 			//insert the record
 	        firstLeaf.insertRecord(key, rid);
 			//update
-			updateHeader(firstLeafId);
+			updateHeader(firstLeafsId);
 	        //headerPage.set_rootId(firstLeafsId);
 
 	        unpinPage(firstLeafsId, true);
