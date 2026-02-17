@@ -371,25 +371,32 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	    // check if trees empty
 		// 
-	    PageId rootId = headerPage.get_rootId();
-	    if (rootId.pid == INVALID_PAGE) {
+	    PageId rootPageId = headerPage.get_rootId();
+	    if (rootPageId.pid == INVALID_PAGE) {
 
 	        BTLeafPage firstLeaf = new BTLeafPage(keyType);
-	        PageId firstLeafId = firstLeaf.getCurPage();
+	        PageId firstLeafsId = firstLeaf.getCurPage();
+			
+         // initial leaves
+		    firstLeaf.setPrevPage(new PageId(INVALID_PAGE));
+            firstLeaf.setNextPage(new PageId(INVALID_PAGE)); 
+				
 			//insert the record
 	        firstLeaf.insertRecord(key, rid);
-	        headerPage.set_rootId(firstLeafId);
+			//update
+			updateHeader(firstLeafId);
+	        //headerPage.set_rootId(firstLeafsId);
 
-	        unpinPage(firstLeafId, true);
+	        unpinPage(firstLeafsId, true);
 	        return;
 	    }
 
-	    // for NON-EMPTY TREE 
+	    // for a tree that isnt empty
 	    // Let _insert take care of it 
-	    KeyDataEntry upEntry = _insert(key, rid, rootId);
+	    KeyDataEntry split = _insert(key, rid, rootPageId);
 
 	    // If theres no split to the root, were good. 
-	    if (upEntry == null) {
+	    if (split == null) {
 	        return;
 	    }
 
@@ -399,23 +406,20 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	    PageId newRootId = newRoot.getCurPage();
 
 	    // Old root becomes the left child
-	    newRoot.setLeftLink(rootId);
+	    newRoot.setLeftLink(rootPageId);
 
 	    // _insert needs to return IndexData(pageId) when going up. 
-		//i dont think a pageID should be returned. (this has to be fixed in _insert)
-	    if (!(upEntry.data instanceof IndexData)) {
-	        throw new InsertException(null,
-	            "Expected IndexData from _insert, but instead got: " + upEntry.data.getClass().getName());
-	    }
+		
 
-	    // Right child of the new root is the page id inside IndexData
-	    PageId rightChild = ((IndexData) upEntry.data).getData();
+	    // Right child of the new root is the page id inside IndexData (after the split)
+	    PageId rightChild = ((IndexData) split.data).getData();
 
-	    // Insert routing entry into the new root
-	    newRoot.insertKey(upEntry.key, rightChild);
+	    // put the separator into the new root
+	    newRoot.insertKey(split.key, rightChild);
 
-	    // Update header to point to the new root
-	    headerPage.set_rootId(newRootId);
+	    // Update header so it point to the new root
+		  updateHeader(newRootId);
+	    //headerPage.set_rootId(newRootId);
 
 	    // Unpin and mark new root dirty
 	    unpinPage(newRootId, true);
@@ -583,12 +587,12 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	            KeyDataEntry e = all.get(i);
 	            idx.insertKey(e.key, ((IndexData) e.data).getData());
 	        }
-	     
+	     /*  this is a duplicate. needs to go
 	        // Build right: [mid+1 .. end-1]
 	        for (int i = 0; i < mid; i++) {
 	            KeyDataEntry e = all.get(i);
 	            idx.insertKey(e.key, ((IndexData) e.data).getData());
-	        }
+	        } */
 	        
 	        for (int i = mid + 1; i < all.size(); i++) {
 	            KeyDataEntry e = all.get(i);
