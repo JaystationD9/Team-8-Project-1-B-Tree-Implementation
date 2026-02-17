@@ -369,14 +369,14 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	{
 	    int keyType = headerPage.get_keyType();
 
-	    // for EMPTY TREE
-		// if
+	    // check if trees empty
+		// 
 	    PageId rootId = headerPage.get_rootId();
 	    if (rootId.pid == INVALID_PAGE) {
 
 	        BTLeafPage firstLeaf = new BTLeafPage(keyType);
 	        PageId firstLeafId = firstLeaf.getCurPage();
-
+			//insert the record
 	        firstLeaf.insertRecord(key, rid);
 	        headerPage.set_rootId(firstLeafId);
 
@@ -385,26 +385,27 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	    }
 
 	    // for NON-EMPTY TREE 
-	    // Delegate the real work to _insert
+	    // Let _insert take care of it 
 	    KeyDataEntry upEntry = _insert(key, rid, rootId);
 
-	    // If no split propagated to the root, we're done
+	    // If theres no split to the root, were good. 
 	    if (upEntry == null) {
 	        return;
 	    }
 
-	    // ROOT SPLIT CASE 
-	    // A split reached the root, so make a new root index page
+	    // if theres root split
+	    // Since a split reached the root, so we make a new root index page
 	    BTIndexPage newRoot = new BTIndexPage(keyType);
 	    PageId newRootId = newRoot.getCurPage();
 
 	    // Old root becomes the left child
 	    newRoot.setLeftLink(rootId);
 
-	    // _insert needs to return IndexData(pageId) when bubbling up. i dont think a pageID should be returned
+	    // _insert needs to return IndexData(pageId) when going up. 
+		//i dont think a pageID should be returned. (this has to be fixed in _insert)
 	    if (!(upEntry.data instanceof IndexData)) {
 	        throw new InsertException(null,
-	            "Expected IndexData from _insert, got: " + upEntry.data.getClass().getName());
+	            "Expected IndexData from _insert, but instead got: " + upEntry.data.getClass().getName());
 	    }
 
 	    // Right child of the new root is the page id inside IndexData
