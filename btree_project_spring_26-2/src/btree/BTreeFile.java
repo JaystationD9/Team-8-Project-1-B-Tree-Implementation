@@ -430,7 +430,181 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	{
 		// [ASantra: 1/22/2026] Remove the return statement and start your code.
-		return null;
+		 // Pin current page
+	    Page page = pinPage(currentPageId);
+	    BTSortedPage sortedPage = new BTSortedPage(page, headerPage.get_keyType());
+
+
+	    if (sortedPage.getType() == NodeType.LEAF) {
+
+	        BTLeafPage leaf = new BTLeafPage(page, headerPage.get_keyType());
+
+	        int need = BT.getKeyDataLength(key, NodeType.LEAF);
+
+	        // Enough space -> just insert
+	        if (leaf.available_space() >= need) {
+	            leaf.insertRecord(key, rid);
+	            unpinPage(currentPageId, true);
+	            return null;
+	        }
+
+	        // Split leaf: allocate a new leaf page 
+	        BTLeafPage newLeaf = new BTLeafPage(headerPage.get_keyType());
+	        PageId newLeafId = newLeaf.getCurPage();
+
+	        // Collect all entries from old leaf
+	        java.util.ArrayList<KeyDataEntry> all = new java.util.ArrayList<>();
+	        RID scanRid = new RID();
+	        for (KeyDataEntry e = leaf.getFirst(scanRid); e != null; e = leaf.getNext(scanRid)) {
+	            all.add(e);
+	        }
+
+	        // Insert the new (key,rid) into sorted list 
+	        KeyDataEntry newEntry = new KeyDataEntry(key, new LeafData(rid));
+	        int pos = 0;
+	        while (pos < all.size() && BT.keyCompare(all.get(pos).key, key) <= 0) pos++;
+	        all.add(pos, newEntry);
+
+	        int mid = all.size() / 2;
+
+	        // Fix leaf sibling pointers
+	        PageId oldNext = leaf.getNextPage();
+	        newLeaf.setPrevPage(currentPageId);
+	        newLeaf.setNextPage(oldNext);
+	        leaf.setNextPage(newLeafId);
+
+	        if (oldNext.pid != INVALID_PAGE) {
+	            BTLeafPage oldNextLeaf = new BTLeafPage(pinPage(oldNext), headerPage.get_keyType());
+	            oldNextLeaf.setPrevPage(newLeafId);
+	            unpinPage(oldNext, true);
+	        }
+
+	        // Clear old leaf and rebuild both leaves
+	        RID delRid = new RID();
+	        while (leaf.getFirst(delRid) != null) {
+	            leaf.deleteSortedRecord(delRid);
+	        }
+
+	        // Old leaf
+	        for (int i = 0; i < mid; i++) {
+	            KeyDataEntry e = all.get(i);
+	            RID r = ((LeafData) e.data).getData();
+	            leaf.insertRecord(e.key, r);
+	        }
+
+	        // New leaf
+	        for (int i = mid; i < all.size(); i++) {
+	            KeyDataEntry e = all.get(i);
+	            RID r = ((LeafData) e.data).getData();
+	            newLeaf.insertRecord(e.key, r);
+	        }
+	        
+	        RID firstRid = new RID();
+	        KeyDataEntry firstRight = newLeaf.getFirst(firstRid);
+	        KeyClass promoteKey = firstRight.key;
+
+	        KeyDataEntry promoteEntry = new KeyDataEntry(promoteKey, new IndexData(newLeafId));
+
+	        unpinPage(currentPageId, true);
+	        unpinPage(newLeafId, true);
+	        return promoteEntry;
+	    }
+
+	    if (sortedPage.getType() == NodeType.INDEX) {
+
+	        BTIndexPage idx = new BTIndexPage(page, headerPage.get_keyType());
+
+	        // Choose child to descend to
+	        PageId childPid = idx.getPageNoByKey(key);
+
+	        // Unpin parent before recursion to avoid pin buildup
+	        unpinPage(currentPageId);
+
+	        // Recurse down
+	        KeyDataEntry upEntry = _insert(key, rid, childPid);
+	        if (upEntry == null) {
+	            return null; // child didn't split
+	        }
+
+	        // Repin current index page to safely modify it
+	        page = pinPage(currentPageId);
+	        idx = new BTIndexPage(page, headerPage.get_keyType());
+
+	        int need = BT.getKeyDataLength(upEntry.key, NodeType.INDEX);
+	        PageId upChild = ((IndexData) upEntry.data).getData();
+
+	        // Enough space -> insert into this index page
+	        if (idx.available_space() >= need) {
+	            idx.insertKey(upEntry.key, upChild);   
+	            unpinPage(currentPageId, true);
+	            return null;
+	        }
+
+	        // Split index page: allocate a new index page 
+	        BTIndexPage right = new BTIndexPage(headerPage.get_keyType());
+	        PageId rightId = right.getCurPage();
+	        
+	        PageId leftMostChild = idx.getPrevPage();
+	        PageId oldNextSibling = idx.getNextPage();  
+
+	        // Collect all entries from left index page
+	        java.util.ArrayList<KeyDataEntry> all = new java.util.ArrayList<>();
+	        RID scanRid = new RID();
+	        for (KeyDataEntry e = idx.getFirst(scanRid); e != null; e = idx.getNext(scanRid)) {
+	            all.add(e);
+	        }
+
+	        // Insert upEntry in sorted position
+	        int pos = 0;
+	        while (pos < all.size() && BT.keyCompare(all.get(pos).key, upEntry.key) < 0) pos++;
+	        all.add(pos, upEntry);
+
+	        int mid = all.size() / 2;
+	        KeyDataEntry midEntry = all.get(mid);
+
+	        // Internal-node split rule:
+	        PageId rightPrev = ((IndexData) midEntry.data).getData();
+	        right.setPrevPage(rightPrev);
+	        
+	        right.setNextPage(oldNextSibling);
+	        idx.setNextPage(rightId);
+
+	        // Clear left index page
+	        RID delRid = new RID();
+	        while (idx.getFirst(delRid) != null) {
+	            idx.deleteSortedRecord(delRid);
+	        }
+	        
+	        idx.setPrevPage(leftMostChild);
+
+	        // Rebuild left: [0 .. mid-1]
+	        for (int i = 0; i < mid; i++) {
+	            KeyDataEntry e = all.get(i);
+	            idx.insertKey(e.key, ((IndexData) e.data).getData());
+	        }
+	     
+	        // Build right: [mid+1 .. end-1]
+	        for (int i = 0; i < mid; i++) {
+	            KeyDataEntry e = all.get(i);
+	            idx.insertKey(e.key, ((IndexData) e.data).getData());
+	        }
+	        
+	        for (int i = mid + 1; i < all.size(); i++) {
+	            KeyDataEntry e = all.get(i);
+	            right.insertKey(e.key, ((IndexData) e.data).getData());
+	        }
+
+	        // Promote mid key to parent, pointing to NEW right page
+	        KeyDataEntry promoteEntry = new KeyDataEntry(midEntry.key, new IndexData(rightId));
+
+	        unpinPage(currentPageId, true);
+	        unpinPage(rightId, true);
+	        return promoteEntry;
+	    }
+
+	    // Unknown type
+	    unpinPage(currentPageId);
+	    throw new NodeNotMatchException(null, "Expected INDEX or LEAF page.");
 	}
 
 	
