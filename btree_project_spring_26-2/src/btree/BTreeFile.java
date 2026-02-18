@@ -366,10 +366,10 @@ public class BTreeFile extends IndexFile implements GlobalConst {
     IteratorException, LeafDeleteException, InsertException,
     IOException {
 
-		// 1) Validate key type: in your case it should be attrInteger
+		// validate the key type. needs to be integer
 	    int kt = headerPage.get_keyType();
 	    if (kt != AttrType.attrInteger) {
-	        throw new KeyNotMatchException(null, "This insert() expects attrInteger in this project setup.");
+	        throw new KeyNotMatchException(null, "This insert() expects attrInteger.");
 	    }
 	    if (!(key instanceof IntegerKey)) {
 	        throw new KeyNotMatchException(null, "Expected IntegerKey.");
@@ -377,48 +377,47 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	    PageId rootId = headerPage.get_rootId();
 
-	    // 2) Empty tree: create first page as root LEAF
+	    //check if the tree is empty, 
 	    if (rootId.pid == INVALID_PAGE) {
 
-	        BTLeafPage newRootPage = new BTLeafPage(kt);     // assumes this allocates a new page (pinned)
+	        BTLeafPage newRootPage = new BTLeafPage(kt);    
 	        PageId newRootId = newRootPage.getCurPage();
 
-	        // Set leaf sibling pointers
+	        // set the leaf sibling pointers
 	        newRootPage.setPrevPage(new PageId(INVALID_PAGE));
 	        newRootPage.setNextPage(new PageId(INVALID_PAGE));
 
-	        // Insert <key, rid>
+	        // Insert the record (key, rid)
 	        newRootPage.insertRecord(key, rid);
-
-	        // Unpin as dirty
+			
+			//unpin and update
 	        unpinPage(newRootId, true);
-
-	        // Update header rootId
+	        
 	        updateHeader(newRootId);
 
 	        return;
 	    }
 
-	    // 3) Non-empty: recursive insert
+	    // for a tree that isnt empty, we'll let insert handle it
 	    KeyDataEntry newRootEntry = _insert(key, rid, rootId);
 
-	    // 4) If root split happened, create a new INDEX root
+	    //  if thers a root split happened, create a new index root, otherwise were done
 	    if (newRootEntry != null) {
 
-	        BTIndexPage newRootIndex = new BTIndexPage(kt);  // assumes allocates a new page (pinned)
+	        BTIndexPage newRootIndex = new BTIndexPage(kt); 
 	        PageId newRootIndexId = newRootIndex.getCurPage();
 
-	        // Leftmost child pointer is the old root
+	        // left child pointer is the old root
 	        newRootIndex.setPrevPage(rootId);
 
-	        // Insert the promoted separator key pointing to the NEW right child
+	        // insert the promoted separator key pointing to the new right child
 	        PageId rightChild = ((IndexData) newRootEntry.data).getData();
 	        newRootIndex.insertKey(newRootEntry.key, rightChild);
 
-	        // Optional (harmless): sibling pointer for root index
+	       
 	        newRootIndex.setNextPage(new PageId(INVALID_PAGE));
 
-	        // Unpin dirty and update header
+	        // Unpin and update header
 	        unpinPage(newRootIndexId, true);
 	        updateHeader(newRootIndexId);
 	    }
