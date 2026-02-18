@@ -367,62 +367,62 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	               IndexSearchException, IteratorException,
 	               LeafDeleteException, InsertException, IOException
 	{
-	    int keyType = headerPage.get_keyType();
+	 	// 1) Validate key type: in your case it should be attrInteger
+	    int kt = headerPage.get_keyType();
+	    if (kt != AttrType.attrInteger) {
+	        throw new KeyNotMatchException(null, "This insert() expects attrInteger in this project setup.");
+	    }
+	    if (!(key instanceof IntegerKey)) {
+	        throw new KeyNotMatchException(null, "Expected IntegerKey.");
+	    }
 
-	    // check if trees empty
-		// 
-	    PageId rootPageId = headerPage.get_rootId();
-	    if (rootPageId.pid == INVALID_PAGE) {
+	    PageId rootId = headerPage.get_rootId();
 
-	        BTLeafPage firstLeaf = new BTLeafPage(keyType);
-	        PageId firstLeafsId = firstLeaf.getCurPage();
-			
-         // initial leaves
-		    firstLeaf.setPrevPage(new PageId(INVALID_PAGE));
-            firstLeaf.setNextPage(new PageId(INVALID_PAGE)); 
-				
-			//insert the record
-	        firstLeaf.insertRecord(key, rid);
-			//update
-			updateHeader(firstLeafsId);
-	        //headerPage.set_rootId(firstLeafsId);
+	    // 2) Empty tree: create first page as root LEAF
+	    if (rootId.pid == INVALID_PAGE) {
 
-	        unpinPage(firstLeafsId, true);
+	        BTLeafPage newRootPage = new BTLeafPage(kt);     // assumes this allocates a new page (pinned)
+	        PageId newRootId = newRootPage.getCurPage();
+
+	        // Set leaf sibling pointers
+	        newRootPage.setPrevPage(new PageId(INVALID_PAGE));
+	        newRootPage.setNextPage(new PageId(INVALID_PAGE));
+
+	        // Insert <key, rid>
+	        newRootPage.insertRecord(key, rid);
+
+	        // Unpin as dirty
+	        unpinPage(newRootId, true);
+
+	        // Update header rootId
+	        updateHeader(newRootId);
+
 	        return;
 	    }
 
-	    // for a tree that isnt empty
-	    // Let _insert take care of it 
-	    KeyDataEntry split = _insert(key, rid, rootPageId);
+	    // 3) Non-empty: recursive insert
+	    KeyDataEntry newRootEntry = _insert(key, rid, rootId);
 
-	    // If theres no split to the root, were good. 
-	    if (split == null) {
-	        return;
+	    // 4) If root split happened, create a new INDEX root
+	    if (newRootEntry != null) {
+
+	        BTIndexPage newRootIndex = new BTIndexPage(kt);  // assumes allocates a new page (pinned)
+	        PageId newRootIndexId = newRootIndex.getCurPage();
+
+	        // Leftmost child pointer is the old root
+	        newRootIndex.setPrevPage(rootId);
+
+	        // Insert the promoted separator key pointing to the NEW right child
+	        PageId rightChild = ((IndexData) newRootEntry.data).getData();
+	        newRootIndex.insertKey(newRootEntry.key, rightChild);
+
+	        // Optional (harmless): sibling pointer for root index
+	        newRootIndex.setNextPage(new PageId(INVALID_PAGE));
+
+	        // Unpin dirty and update header
+	        unpinPage(newRootIndexId, true);
+	        updateHeader(newRootIndexId);
 	    }
-
-	    // if theres root split
-	    // Since a split reached the root, so we make a new root index page
-	    BTIndexPage newRoot = new BTIndexPage(keyType);
-	    PageId newRootId = newRoot.getCurPage();
-
-	    // Old root becomes the left child
-	    newRoot.setLeftLink(rootPageId);
-
-	    // _insert needs to return IndexData(pageId) when going up. 
-		
-
-	    // Right child of the new root is the page id inside IndexData (after the split)
-	    PageId rightChild = ((IndexData) split.data).getData();
-
-	    // put the separator into the new root
-	    newRoot.insertKey(split.key, rightChild);
-
-	    // Update header so it point to the new root
-		  updateHeader(newRootId);
-	    //headerPage.set_rootId(newRootId);
-
-	    // Unpin and mark new root dirty
-	    unpinPage(newRootId, true);
 	}
 
 
@@ -435,7 +435,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	{
 		// [ASantra: 1/22/2026] Remove the return statement and start your code.
-		 // Pin current page
+    	// Pin current page
 	    Page page = pinPage(currentPageId);
 	    BTSortedPage sortedPage = new BTSortedPage(page, headerPage.get_keyType());
 
@@ -587,12 +587,12 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	            KeyDataEntry e = all.get(i);
 	            idx.insertKey(e.key, ((IndexData) e.data).getData());
 	        }
-	     /*  this is a duplicate. needs to go
+	     
 	        // Build right: [mid+1 .. end-1]
 	        for (int i = 0; i < mid; i++) {
 	            KeyDataEntry e = all.get(i);
 	            idx.insertKey(e.key, ((IndexData) e.data).getData());
-	        } */
+	        }
 	        
 	        for (int i = mid + 1; i < all.size(); i++) {
 	            KeyDataEntry e = all.get(i);
@@ -831,7 +831,6 @@ private boolean NaiveDelete(KeyClass key, RID rid)
 
 	    // Empty tree / nothing to scan
 	    if (leaf == null) {
-	        System.out.println("NaiveDelete: key not found at leaf level.");
 	        return false;
 	    }
 
@@ -921,11 +920,11 @@ private boolean NaiveDelete(KeyClass key, RID rid)
 	        }
 	    }
 
-	    if (!sawKey) {
+	    /*if (!sawKey) {
 	        System.out.println("NaiveDelete: key not found at leaf level.");
 	    } else if (!deletedAny) {
 	        System.out.println("NaiveDelete: <key,rid> pair not found for deletion.");
-	    }
+	    }*/
 
 	    return deletedAny;
 	}
