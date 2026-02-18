@@ -1,7 +1,9 @@
 JAR=btreelib.jar
 
 # Path to your project folder
-ASSIGN=/root/Documents/main/btree_project_spring_26-2
+/home/sxm6351/Team-8-Project-1-B-Tree-Implementation/btree_project_spring_26-2/src/tests/Makefile
+
+#ASSIGN=/root/Documents/main/btree_project_spring_26-2
 
 # Correct LIBPATH to point to the correct location
 LIBPATH = $(ASSIGN)/lib/$(JAR)
