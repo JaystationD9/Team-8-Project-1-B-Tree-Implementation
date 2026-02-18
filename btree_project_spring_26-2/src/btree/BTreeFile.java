@@ -444,7 +444,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 
 	        int need = BT.getKeyDataLength(key, NodeType.LEAF);
 
-	        // Enough space -> just insert
+	        // Enough space   just insert
 	        if (leaf.available_space() >= need) {
 	            leaf.insertRecord(key, rid);
 	            unpinPage(currentPageId, true);
@@ -536,7 +536,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	        int need = BT.getKeyDataLength(upEntry.key, NodeType.INDEX);
 	        PageId upChild = ((IndexData) upEntry.data).getData();
 
-	        // Enough space -> insert into this index page
+	        // Enough space   insert into this index page
 	        if (idx.available_space() >= need) {
 	            idx.insertKey(upEntry.key, upChild);   
 	            unpinPage(currentPageId, true);
@@ -850,7 +850,7 @@ public class BTreeFile extends IndexFile implements GlobalConst {
 	                entry = leaf.getNext(entryRid);
 	            }
 
-	            // No entries >= key on this page -> go right
+	            // No entries >= key on this page   go right
 	            if (entry == null) {
 	                PageId nextPid = leaf.getNextPage();
 	                unpinPage(curPid, dirty);
