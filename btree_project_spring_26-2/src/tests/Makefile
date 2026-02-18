@@ -1,28 +1,22 @@
 JAR=btreelib.jar
 
-# Path to your project folder
-/home/sxm6351/Team-8-Project-1-B-Tree-Implementation/btree_project_spring_26-2/src/tests/Makefile
+#this is the name of the given project folder
+ASSIGNMENT=btree_project_spring_26-2
 
-#ASSIGN=/root/Documents/main/btree_project_spring_26-2
+#change the ASSIGN path to the path where you have downloaded
+ASSIGN=/Users/jasonyeung/Downloads
 
-# Correct LIBPATH to point to the correct location
-LIBPATH = $(ASSIGN)/lib/$(JAR)
-
-# The CLASSPATH should include both the JAR file and the src directory
-CLASSPATH = $(LIBPATH):$(ASSIGN)/src
-
-# Java compile and run commands with classpath set
+# Do not change the following paths if you are using omega.uta.edu (Spring 2026)
+LIBPATH = $(ASSIGN)/$(ASSIGNMENT)/lib/$(JAR)
+CLASSPATH = $(LIBPATH):$(ASSIGN)/$(ASSIGNMENT)/src
 JAVAC = javac -classpath $(CLASSPATH)
-JAVA  = java -classpath $(CLASSPATH)
+JAVA  = java  -classpath $(CLASSPATH)
 
-# Target to compile the test files (BTTest.java, TestDriver.java, etc.)
-tests: $(ASSIGN)/src/tests/BTTest.java $(ASSIGN)/src/tests/TestDriver.java
-	$(JAVAC) $(ASSIGN)/src/tests/*.java
+BTTest:BTTest.java
+	$(JAVAC) BTTest.java TestDriver.java
 
-# Target to run the tests using the BTTest class
-bttest: tests
-	$(JAVA) tests.BTTest   # Runs the tests using the BTTest class
+bttest: BTTest
+	$(JAVA) tests.BTTest
 
-# Clean up the compiled class files in the tests directory
 clean:
-	rm -f $(ASSIGN)/src/tests/*.class *~ \#* core
+	\rm -f *.class *~ \#* core
